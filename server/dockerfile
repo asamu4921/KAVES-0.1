@@ -1,0 +1,20 @@
+# Gunakan image node versi terbaru (long term support)
+FROM node:20-alpine
+
+# Set folder kerja di dalam container
+WORKDIR /app
+
+# Copy file package.json dan package-lock.json dulu (optimasi cache)
+COPY package*.json ./
+
+# Install dependencies di dalam container
+RUN npm install
+
+# Copy seluruh file project (selain yang di .dockerignore) ke container
+COPY . .
+
+# Expose port sesuai yang digunakan server.js kamu (5454)
+EXPOSE 5454
+
+# Jalankan aplikasi (Gunakan 'node' bukan 'nodemon' untuk container yang stabil)
+CMD ["node", "server.js"]

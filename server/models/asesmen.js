@@ -6,6 +6,10 @@ const asesmenSchema = new mongoose.Schema({
     ref: "Bangunan",
     required: true
   },
+  nomor_surat: String,
+  tugas: String,
+  lokasi: String,
+  peralatan: String,
   jenis_pekerjaan: String,
   jenis_bahaya: String,
   cause_effect: String,
@@ -21,6 +25,11 @@ const asesmenSchema = new mongoose.Schema({
   ref: "User",
   required: true
   },
+  disetujui_oleh: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  },
+  tanggal_disetujui: Date,
   tanggal_dibuat: {
     type: Date,
     default: Date.now

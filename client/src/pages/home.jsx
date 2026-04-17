@@ -20,6 +20,18 @@ export default function Home() {
   // state untuk list ruang kerja
   const [workspaces, setWorkspaces] = useState([]);
 
+  // state untuk create/edit ruang kerja
+  const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false);
+  const [showEditWorkspaceModal, setShowEditWorkspaceModal] = useState(false);
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState(null);
+  const [loadingWorkspaceForm, setLoadingWorkspaceForm] = useState(false);
+  const [workspaceFormData, setWorkspaceFormData] = useState({
+    nama: "",
+    logoFile: null,
+    logo_url: "",
+    removeLogo: false,
+  });
+
   const backendURL = import.meta.env.VITE_BACKEND_URL;
   
   const [user, setUser] = useState(null);
@@ -118,6 +130,181 @@ export default function Home() {
     });
     localStorage.clear();
     window.location.href = "/login";
+  };
+
+  // ===== HANDLER WORKSPACE =====
+  const handleResetWorkspaceForm = () => {
+    setWorkspaceFormData({
+      nama: "",
+      logoFile: null,
+      logo_url: "",
+      removeLogo: false,
+    });
+    setEditingWorkspaceId(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    handleResetWorkspaceForm();
+    setShowCreateWorkspaceModal(true);
+  };
+
+  const handleOpenEditModal = (workspace) => {
+    setWorkspaceFormData({
+      nama: workspace.nama || "",
+      logoFile: null,
+      logo_url: workspace.logo_url || "",
+      removeLogo: false,
+    });
+    setEditingWorkspaceId(workspace._id);
+    setShowEditWorkspaceModal(true);
+  };
+
+  const handleSaveWorkspace = async (e) => {
+    e.preventDefault();
+    setLoadingWorkspaceForm(true);
+
+    try {
+      const payload = new FormData();
+      payload.append("nama", workspaceFormData.nama || "");
+      if (workspaceFormData.logoFile) {
+        payload.append("file", workspaceFormData.logoFile);
+      }
+      if (workspaceFormData.removeLogo) {
+        payload.append("removeLogo", "true");
+      }
+
+      if (editingWorkspaceId) {
+        // Update
+        const res = await fetch(
+          `${backendURL}/api/ruangkerja/edit-ruangkerja?ruangkerja_id=${editingWorkspaceId}`,
+          {
+            method: "PUT",
+            credentials: "include",
+            body: payload,
+          }
+        );
+        const data = await res.json();
+        if (data.success) {
+          alert("Ruang kerja berhasil diupdate");
+          setShowEditWorkspaceModal(false);
+          // Refresh workspaces list
+          const listRes = await fetch(`${backendURL}/api/ruangkerja/list-ruangkerja`, {
+            credentials: "include",
+          });
+          const listData = await listRes.json();
+          if (listData.success) {
+            setWorkspaces(listData.data || []);
+          }
+        } else {
+          alert(data.message || "Gagal update ruang kerja");
+        }
+      } else {
+        // Create
+        const res = await fetch(`${backendURL}/api/ruangkerja/buat-ruangkerja`, {
+          method: "POST",
+          credentials: "include",
+          body: payload,
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert("Ruang kerja berhasil dibuat");
+          setShowCreateWorkspaceModal(false);
+          handleResetWorkspaceForm();
+          // Refresh workspaces list
+          const listRes = await fetch(`${backendURL}/api/ruangkerja/list-ruangkerja`, {
+            credentials: "include",
+          });
+          const listData = await listRes.json();
+          if (listData.success) {
+            setWorkspaces(listData.data || []);
+          }
+        } else {
+          alert(data.message || "Gagal buat ruang kerja");
+        }
+      }
+    } catch (err) {
+      console.error("Error:", err);
+      alert("Terjadi kesalahan saat menyimpan ruang kerja");
+    } finally {
+      setLoadingWorkspaceForm(false);
+    }
+  };
+
+  const handleDeleteWorkspace = async (workspaceId) => {
+    if (!confirm("Apakah Anda yakin ingin menghapus ruang kerja ini?")) return;
+
+    try {
+      const res = await fetch(`${backendURL}/api/ruangkerja/hapus-ruangkerja`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: workspaceId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("Ruang kerja berhasil dihapus");
+        // Refresh workspaces list
+        const listRes = await fetch(`${backendURL}/api/ruangkerja/list-ruangkerja`, {
+          credentials: "include",
+        });
+        const listData = await listRes.json();
+        if (listData.success) {
+          setWorkspaces(listData.data || []);
+        }
+      } else {
+        alert(data.message || "Gagal hapus ruang kerja");
+      }
+    } catch (err) {
+      console.error("Error:", err);
+      alert("Terjadi kesalahan saat menghapus ruang kerja");
+    }
+  };
+
+  const handleLeaveWorkspace = async (targetWorkspaceId) => {
+    if (!confirm("Apakah Anda yakin ingin keluar dari workspace ini?")) return;
+
+    try {
+      const res = await fetch(
+        `${backendURL}/api/ruangkerja/keluar-sendiri?ruangkerja_id=${targetWorkspaceId}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+        }
+      );
+
+      const data = await res.json();
+      if (!data.success) {
+        alert(data.message || "Gagal keluar dari workspace");
+        return;
+      }
+
+      const listRes = await fetch(`${backendURL}/api/ruangkerja/list-ruangkerja`, {
+        credentials: "include",
+      });
+      const listData = await listRes.json();
+      const wsList = listData.success ? (listData.data || []) : [];
+      setWorkspaces(wsList);
+
+      if (workspaceId === targetWorkspaceId) {
+        if (wsList.length > 0) {
+          const nextWs = wsList[0];
+          setWorkspaceId(nextWs._id);
+          setWorkspaceName(nextWs.nama);
+          localStorage.setItem("workspace_aktif", nextWs._id);
+          localStorage.setItem("workspace_aktif_nama", nextWs.nama);
+        } else {
+          setWorkspaceId(null);
+          setWorkspaceName(null);
+          localStorage.removeItem("workspace_aktif");
+          localStorage.removeItem("workspace_aktif_nama");
+        }
+      }
+
+      alert("Berhasil keluar dari workspace");
+    } catch (err) {
+      console.error("Error:", err);
+      alert("Terjadi kesalahan saat keluar dari workspace");
+    }
   };
 
 
@@ -696,39 +883,57 @@ useEffect(() => {
                     Ganti workspace untuk melihat dashboard, anggota, dan laporan sesuai ruang kerja yang dipilih.
                   </p>
                 </div>
-                <div className="rounded-3xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-                  {workspaces.length} workspace
+                <div className="flex gap-3">
+                  <div className="rounded-3xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                    {workspaces.length} workspace
+                  </div>
+                  <button
+                    onClick={handleOpenCreateModal}
+                    className="rounded-3xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    + Buat Baru
+                  </button>
                 </div>
               </div>
 
               {workspaces.length === 0 ? (
                 <div className="mt-6 rounded-[28px] border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-slate-500">
-                  Belum ada ruang kerja. Silakan tambahkan workspace terlebih dahulu.
+                  <p>Belum ada ruang kerja. Silakan tambahkan workspace terlebih dahulu.</p>
+                  <button
+                    onClick={handleOpenCreateModal}
+                    className="mt-4 rounded-3xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    Buat Workspace Pertama
+                  </button>
                 </div>
               ) : (
                 <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {workspaces.map((ws) => {
                     const isActive = ws._id === workspaceId;
+                    const currentUserId = user?.id || localStorage.getItem("user_id");
+                    const isOwner = String(ws.pengguna_id) === String(currentUserId);
                     return (
-                      <button
+                      <div
                         key={ws._id}
-                        type="button"
-                        onClick={() => {
-                          localStorage.setItem("workspace_aktif", ws._id);
-                          localStorage.setItem("workspace_aktif_nama", ws.nama);
-
-                          setWorkspaceId(ws._id);
-                          setWorkspaceName(ws.nama);
-                          setActivePage("Dashboard");
-
-                          alert(`Berhasil mengubah workspace ke: ${ws.nama}`);
-                        }}
-                        className={`group rounded-[28px] border p-5 text-left transition ${isActive ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"}`}
+                        className={`group rounded-[28px] border p-5 transition ${isActive ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"}`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                          <div className="flex items-start gap-3">
+                            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg">
+                              {ws.logo_url ? (
+                                <img
+                                  src={ws.logo_url}
+                                  alt={`Logo ${ws.nama}`}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                (ws.nama || "W").charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div>
                             <p className="text-sm uppercase tracking-[0.35em] text-slate-500">Workspace</p>
                             <h4 className="mt-2 text-lg font-semibold text-slate-900">{ws.nama}</h4>
+                            </div>
                           </div>
                           {isActive && (
                             <span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white">
@@ -736,7 +941,50 @@ useEffect(() => {
                             </span>
                           )}
                         </div>
-                      </button>
+
+                        {/* Action Buttons */}
+                        <div className="flex gap-2 mt-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              localStorage.setItem("workspace_aktif", ws._id);
+                              localStorage.setItem("workspace_aktif_nama", ws.nama);
+                              setWorkspaceId(ws._id);
+                              setWorkspaceName(ws.nama);
+                              setActivePage("Dashboard");
+                            }}
+                            className="flex-1 rounded-2xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+                          >
+                            Pilih
+                          </button>
+                          {isOwner ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(ws)}
+                                className="flex-1 rounded-2xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteWorkspace(ws._id)}
+                                className="flex-1 rounded-2xl bg-red-600 px-3 py-2 text-xs font-semibold text-white hover:bg-red-700 transition"
+                              >
+                                Hapus
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleLeaveWorkspace(ws._id)}
+                              className="flex-1 rounded-2xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600 transition"
+                            >
+                              Keluar
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -785,6 +1033,121 @@ useEffect(() => {
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
                 >
                   {loadingEdit ? 'Menyimpan...' : 'Simpan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE WORKSPACE MODAL */}
+      {showCreateWorkspaceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100/80 px-4 py-8 backdrop-blur-sm">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold mb-4">Buat Ruang Kerja Baru</h3>
+            <form onSubmit={handleSaveWorkspace}>
+              <div>
+                <label className="block text-sm font-medium mb-2">Nama Ruang Kerja *</label>
+                <input
+                  type="text"
+                  value={workspaceFormData.nama}
+                  onChange={(e) => setWorkspaceFormData({...workspaceFormData, nama: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Logo Ruang Kerja</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setWorkspaceFormData({ ...workspaceFormData, logoFile: e.target.files?.[0] || null })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateWorkspaceModal(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loadingWorkspaceForm}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loadingWorkspaceForm ? 'Membuat...' : 'Buat Workspace'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT WORKSPACE MODAL */}
+      {showEditWorkspaceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100/80 px-4 py-8 backdrop-blur-sm">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[28px] bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold mb-4">Edit Ruang Kerja</h3>
+            <form onSubmit={handleSaveWorkspace}>
+              <div>
+                <label className="block text-sm font-medium mb-2">Nama Ruang Kerja *</label>
+                <input
+                  type="text"
+                  value={workspaceFormData.nama}
+                  onChange={(e) => setWorkspaceFormData({...workspaceFormData, nama: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div className="mt-4">
+                <label className="block text-sm font-medium mb-2">Logo Ruang Kerja</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setWorkspaceFormData({ ...workspaceFormData, logoFile: e.target.files?.[0] || null })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {workspaceFormData.logo_url && (
+                <div className="mt-3 rounded-xl border border-slate-200 p-3">
+                  <p className="text-xs text-slate-500 mb-2">Logo saat ini</p>
+                  <img
+                    src={workspaceFormData.logo_url}
+                    alt="Logo workspace"
+                    className="h-16 w-16 rounded-lg object-cover"
+                  />
+                  <label className="mt-3 inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={workspaceFormData.removeLogo}
+                      onChange={(e) => setWorkspaceFormData({ ...workspaceFormData, removeLogo: e.target.checked })}
+                    />
+                    Hapus logo saat ini
+                  </label>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowEditWorkspaceModal(false)}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={loadingWorkspaceForm}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {loadingWorkspaceForm ? 'Menyimpan...' : 'Simpan Perubahan'}
                 </button>
               </div>
             </form>

@@ -20,6 +20,23 @@ const cekAksesKeRuang = async (ruangkerjaId, userId) => {
   return { exists: true, isOwner, isMember, ruang };
 };
 
+const hitungRiskDanDanger = (payload) => {
+  const likelihood = Number(payload.likelihood) || 0;
+  const severity = Number(payload.severity) || 0;
+  const risk = likelihood * severity;
+
+  return {
+    ...payload,
+    likelihood,
+    severity,
+    risk,
+    danger:
+      risk >= 17 ? "Katastropik" :
+      risk >= 10 ? "High" :
+      risk >= 5 ? "Medium" : "Low"
+  };
+};
+
 /**
  * POST /api/asesmen/tambah?bangunan_id=...
  * Owner dan anggota boleh tambah
@@ -50,8 +67,10 @@ export const tambahAsesmen = async (req, res) => {
 
     const asesmen = await Asesmen.create({
       bangunan_id,
-      ...req.body,
+      ...hitungRiskDanDanger(req.body),
       dibuat_oleh: userId,
+      disetujui_oleh: akses.ruang.pengguna_id,
+      tanggal_disetujui: new Date(),
       tanggal_dibuat: new Date()
     });
 
@@ -77,7 +96,8 @@ export const listAsesmen = async (req, res) => {
     // TAMBAHKAN .populate("dibuat_oleh", "name") 
     // agar field 'name' dari user diambil otomatis
     const data = await Asesmen.find({ bangunan_id })
-      .populate("dibuat_oleh", "name") 
+      .populate("dibuat_oleh", "name")
+      .populate("disetujui_oleh", "name")
       .sort({ tanggal_dibuat: -1 });
 
     return res.json({ success: true, data });
@@ -107,13 +127,23 @@ export const editAsesmen = async (req, res) => {
     const asesmen = await Asesmen.findById(asesmen_id);
     if (!asesmen) return res.status(404).json({ success: false, message: "Asesmen tidak ditemukan" });
 
-    const akses = await cekAksesKeRuang(asesmen.bangunan_id && (await Bangunan.findById(asesmen.bangunan_id)).ruangkerja_id, userId);
-    // above line: ambil ruangkerja_id dari bangunan yang ada di asesmen
+    const bangunan = await Bangunan.findById(asesmen.bangunan_id);
+    if (!bangunan) return res.status(404).json({ success: false, message: "Bangunan tidak ditemukan" });
+
+    const akses = await cekAksesKeRuang(bangunan.ruangkerja_id, userId);
 
     if (!akses.exists) return res.status(404).json({ success: false, message: "Ruang kerja tidak ditemukan" });
     if (!akses.isOwner) return res.status(403).json({ success: false, message: "Hanya owner yang boleh edit asesmen" });
 
-    const updated = await Asesmen.findByIdAndUpdate(asesmen_id, req.body, { new: true });
+    const updatePayload = {
+      ...hitungRiskDanDanger(req.body),
+      disetujui_oleh: akses.ruang.pengguna_id,
+      tanggal_disetujui: req.body.tanggal_disetujui || new Date()
+    };
+
+    const updated = await Asesmen.findByIdAndUpdate(asesmen_id, updatePayload, { new: true })
+      .populate("dibuat_oleh", "name")
+      .populate("disetujui_oleh", "name");
     return res.json({ success: true, message: "Asesmen berhasil diperbarui", data: updated });
   } catch (err) {
     console.error("editAsesmen:", err);

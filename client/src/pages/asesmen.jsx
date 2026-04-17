@@ -7,6 +7,10 @@ function Asesmen({ workspaceId }) {
   const [popup, setPopup] = useState({ show: false, message: "", success: false });
   const backendURL = import.meta.env.VITE_BACKEND_URL;
   const [formData, setFormData] = useState({
+    nomor_surat: "",
+    tugas: "",
+    lokasi: "",
+    peralatan: "",
     jenis_pekerjaan: "",
     jenis_bahaya: "",
     cause_effect: "",
@@ -21,6 +25,10 @@ function Asesmen({ workspaceId }) {
 
   const resetForm = () => {
     setFormData({
+      nomor_surat: "",
+      tugas: "",
+      lokasi: "",
+      peralatan: "",
       jenis_pekerjaan: "",
       jenis_bahaya: "",
       cause_effect: "",
@@ -32,6 +40,22 @@ function Asesmen({ workspaceId }) {
       danger: "",
       prevensi: ""
     });
+  };
+
+  const resetDetailForm = () => {
+    setFormData((prev) => ({
+      ...prev,
+      jenis_pekerjaan: "",
+      jenis_bahaya: "",
+      cause_effect: "",
+      likelihood: "",
+      severity: "",
+      risk: "",
+      level: "",
+      impact: "",
+      danger: "",
+      prevensi: ""
+    }));
   };
 
   useEffect(() => {
@@ -81,7 +105,7 @@ function Asesmen({ workspaceId }) {
     const severity = Number(newData.severity) || 0;
     const risk = likelihood * severity;
     newData.risk = risk;
-    newData.danger = risk >= 15 ? "High" : risk >= 5 ? "Medium" : "Low";
+    newData.danger = risk >= 17 ? "Catastrophic" : risk >= 10 ? "High" : risk >= 5 ? "Medium" : "Low";
 
     setFormData(newData);
   };
@@ -105,7 +129,7 @@ function Asesmen({ workspaceId }) {
       const data = await res.json();
       if (data.success) {
         setPopup({ show: true, message: "Asesmen berhasil ditambahkan", success: true });
-        resetForm();
+        resetDetailForm();
       } else {
         setPopup({ show: true, message: data.message || "Gagal menambah asesmen", success: false });
       }
@@ -139,7 +163,7 @@ function Asesmen({ workspaceId }) {
                   onChange={(e) => {
                     const b = bangunanList.find((x) => x._id === e.target.value);
                     setSelectedBangunan(b);
-                    resetForm();
+                    resetDetailForm();
                   }}
                 >
                   <option value="">-- Pilih Gedung --</option>
@@ -166,6 +190,50 @@ function Asesmen({ workspaceId }) {
                 </div>
 
                 <form onSubmit={handleSubmitAsesmen} className="grid gap-4 lg:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Nomor Surat</span>
+                    <input
+                      value={formData.nomor_surat}
+                      onChange={(e) => handleChange("nomor_surat", e.target.value)}
+                      className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                      placeholder="Contoh: MCS-TWA-K3-001"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Tugas</span>
+                    <input
+                      value={formData.tugas}
+                      onChange={(e) => handleChange("tugas", e.target.value)}
+                      className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                      placeholder="Tugas yang sedang dilakukan"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Lokasi</span>
+                    <input
+                      value={formData.lokasi}
+                      onChange={(e) => handleChange("lokasi", e.target.value)}
+                      className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                      placeholder="Lokasi detail asesmen"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-700">Peralatan</span>
+                    <input
+                      value={formData.peralatan}
+                      onChange={(e) => handleChange("peralatan", e.target.value)}
+                      className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                      placeholder="Peralatan yang digunakan"
+                    />
+                  </label>
+
+                  <div className="col-span-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700">
+                    Field <span className="font-semibold">Disetujui Oleh</span> dan <span className="font-semibold">Tanggal Disetujui</span> diisi otomatis oleh sistem berdasarkan owner workspace.
+                  </div>
+
                   <label className="space-y-2">
                     <span className="text-sm font-medium text-slate-700">Jenis Pekerjaan</span>
                     <input
@@ -265,10 +333,17 @@ function Asesmen({ workspaceId }) {
                   <div className="col-span-2 flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <button
                       type="button"
+                      onClick={() => resetDetailForm()}
+                      className="rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                    >
+                      Reset Detail
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => resetForm()}
                       className="rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
                     >
-                      Reset Form
+                      Reset Semua
                     </button>
                     <button
                       type="submit"

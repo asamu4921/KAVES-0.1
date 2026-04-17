@@ -17,7 +17,10 @@ router.get("/list", userAuth, listLaporan);
 router.post(
   "/tambah",
   userAuth,
-  upload.single("file"),
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "foto", maxCount: 1 },
+  ]),
   tambahLaporan
 );
 
@@ -25,7 +28,10 @@ router.post(
 router.put(
   "/edit",
   userAuth,
-  upload.single("file"), // ← WAJIB
+  upload.fields([
+    { name: "file", maxCount: 1 },
+    { name: "foto", maxCount: 1 },
+  ]), // menerima key file lama dan baru
   editLaporan
 );
 

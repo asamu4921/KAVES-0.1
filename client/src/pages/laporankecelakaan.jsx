@@ -31,6 +31,7 @@ const opsiResiko = [
 ];
 
 const [foto, setFoto] = useState(null);
+const [photoMode, setPhotoMode] = useState("camera");
 const [showDetail, setShowDetail] = useState(false); // ⬅️ toggle detail tambahan
 const [actionMenuId, setActionMenuId] = useState(null);
 const [selectedImage, setSelectedImage] = useState(null);
@@ -112,6 +113,7 @@ const [selectedImage, setSelectedImage] = useState(null);
         setEditId(null);
         setForm({ lokasi: "", deskripsi_kejadian: "", penyebab: "", tingkat_resiko: "" });
         setFoto(null);
+        setPhotoMode("camera");
         fetchLaporan();
       } else {
         setPopup({ show: true, message: data.message || "Gagal menyimpan laporan", success: false });
@@ -175,6 +177,7 @@ const [selectedImage, setSelectedImage] = useState(null);
               setEditId(null);
               setForm({ lokasi: "", deskripsi_kejadian: "", penyebab: "", tingkat_resiko: "" });
               setFoto(null);
+              setPhotoMode("camera");
             }}
             className="w-full bg-slate-900 text-white text-sm font-semibold px-4 py-3 rounded-2xl flex items-center justify-center gap-2 shadow-lg hover:bg-slate-800 transition"
           >
@@ -392,142 +395,180 @@ const [selectedImage, setSelectedImage] = useState(null);
 
       {/* ================= MODAL TAMBAH / EDIT ================= */}
       {modalOpen && (
-        <div className="fixed inset-0 flex items-start justify-center pt-20 backdrop-blur-sm bg-black/20 z-50">
-          <div className="bg-white rounded shadow-lg w-full max-w-md flex flex-col max-h-[85vh]">
-            <h4 className="text-lg font-semibold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6 backdrop-blur-sm">
+          <div className="flex w-full max-w-3xl flex-col overflow-hidden rounded-[28px] bg-white shadow-2xl max-h-[90vh]">
+            <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-6 py-5 text-white">
+              <p className="text-[11px] uppercase tracking-[0.35em] text-white/80">
+                Laporan Kecelakaan
+              </p>
+              <h4 className="mt-2 text-2xl font-semibold">
               {editId ? "Edit Laporan" : "Tambah Laporan"}
-            </h4>
-            <div className="p-6 space-y-4 overflow-y-auto">
-            {/* FOTO */}
-            <div className="space-y-2">
-                <label className="text-sm font-semibold">Foto Kejadian *</label>
-                <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(e) => setFoto(e.target.files[0])}
-                className="w-full border rounded p-2"
-                />
+              </h4>
             </div>
 
-            {/* DESKRIPSI */}
-            <div className="space-y-2">
-                <label className="text-sm font-semibold">Deskripsi Kejadian *</label>
-                <textarea
-                value={form.deskripsi_kejadian}
-                onChange={(e) =>
-                    setForm({ ...form, deskripsi_kejadian: e.target.value })
-                }
-                className="w-full border rounded p-2 min-h-[100px]"
-                placeholder="Jelaskan kronologi kejadian"
-                />
-            </div>
-
-            {/* TOGGLE DETAIL */}
-            <button
-                type="button"
-                onClick={() => setShowDetail(!showDetail)}
-                className="text-green-600 text-sm font-medium hover:underline"
-            >
-                {showDetail ? "Tutup Detail Tambahan ▲" : "Detail Tambahan ▼"}
-            </button>
-
-            {/* DETAIL TAMBAHAN */}
-            {showDetail && (
-            <div className="grid grid-cols-1 gap-2 mt-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold">Lokasi (Gedung)</label>
-                  <select
-                    value={form.lokasi}
-                    onChange={(e) => setForm({ ...form, lokasi: e.target.value })}
-                    className="w-full border rounded p-2 bg-white"
-                  >
-                    <option value="">Pilih Gedung</option>
-                    {bangunanList.map((bangunan) => (
-                      <option key={bangunan._id} value={bangunan.nama}>
-                        {bangunan.nama}
-                      </option>
-                    ))}
-                  </select>
+            <div className="overflow-y-auto p-6">
+              <div className="grid gap-4 lg:grid-cols-2">
+                {/* FOTO */}
+                <div className="space-y-3 lg:col-span-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-sm font-semibold text-slate-700">Foto Kejadian *</label>
+                    <div className="inline-flex rounded-2xl bg-slate-100 p-1 text-xs font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setPhotoMode("camera")}
+                        className={`rounded-xl px-3 py-2 transition ${photoMode === "camera" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-600"}`}
+                      >
+                        Kamera
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoMode("gallery")}
+                        className={`rounded-xl px-3 py-2 transition ${photoMode === "gallery" ? "bg-white text-emerald-700 shadow-sm" : "text-slate-600"}`}
+                      >
+                        Galeri
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture={photoMode === "camera" ? "environment" : undefined}
+                    onChange={(e) => setFoto(e.target.files[0])}
+                    className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Pilih <span className="font-semibold">Kamera</span> untuk ambil foto langsung, atau <span className="font-semibold">Galeri</span> untuk pilih file yang sudah ada.
+                  </p>
                 </div>
 
-                <input
-                placeholder="Penyebab"
-                value={form.penyebab}
-                onChange={(e) => setForm({ ...form, penyebab: e.target.value })}
-                className="border rounded p-2"
-                />
+                {/* DESKRIPSI */}
+                <div className="space-y-2 lg:col-span-2">
+                  <label className="text-sm font-semibold text-slate-700">Deskripsi Kejadian *</label>
+                  <textarea
+                    value={form.deskripsi_kejadian}
+                    onChange={(e) => setForm({ ...form, deskripsi_kejadian: e.target.value })}
+                    className="min-h-[120px] w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                    placeholder="Jelaskan kronologi kejadian"
+                  />
+                </div>
 
-                <select
-                  value={form.tingkat_resiko}
-                  onChange={(e) =>
-                    setForm({ ...form, tingkat_resiko: e.target.value })
-                  }
-                  className="border rounded p-2 bg-white"
+                {/* TOGGLE DETAIL */}
+                <div className="lg:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDetail(!showDetail)}
+                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+                  >
+                    {showDetail ? "Sembunyikan detail tambahan" : "Tampilkan detail tambahan"}
+                  </button>
+                </div>
+
+                {/* DETAIL TAMBAHAN */}
+                {showDetail && (
+                  <div className="grid gap-4 lg:col-span-2 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700">Lokasi (Gedung)</label>
+                      <select
+                        value={form.lokasi}
+                        onChange={(e) => setForm({ ...form, lokasi: e.target.value })}
+                        className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      >
+                        <option value="">Pilih Gedung</option>
+                        {bangunanList.map((bangunan) => (
+                          <option key={bangunan._id} value={bangunan.nama}>
+                            {bangunan.nama}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700">Penyebab</label>
+                      <input
+                        placeholder="Penyebab"
+                        value={form.penyebab}
+                        onChange={(e) => setForm({ ...form, penyebab: e.target.value })}
+                        className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700">Tingkat Resiko</label>
+                      <select
+                        value={form.tingkat_resiko}
+                        onChange={(e) => setForm({ ...form, tingkat_resiko: e.target.value })}
+                        className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      >
+                        <option value="">Pilih Tingkat Resiko</option>
+                        {opsiResiko.map((resiko) => (
+                          <option key={resiko} value={resiko}>
+                            {resiko}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700">Jenis Cedera</label>
+                      <input
+                        placeholder="Jenis Cedera"
+                        value={form.jenis_cedera}
+                        onChange={(e) => setForm({ ...form, jenis_cedera: e.target.value })}
+                        className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700">Pertolongan Pertama</label>
+                      <input
+                        placeholder="Pertolongan Pertama"
+                        value={form.pertolongan_pertama}
+                        onChange={(e) => setForm({ ...form, pertolongan_pertama: e.target.value })}
+                        className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-slate-700">Nama Petugas</label>
+                      <input
+                        placeholder="Nama Petugas"
+                        value={form.nama_petugas}
+                        onChange={(e) => setForm({ ...form, nama_petugas: e.target.value })}
+                        className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-2 lg:col-span-2">
+                      <label className="text-sm font-semibold text-slate-700">Pencegahan Ke Depan</label>
+                      <textarea
+                        placeholder="Pencegahan Ke Depan"
+                        value={form.pencegahan_ke_depan}
+                        onChange={(e) => setForm({ ...form, pencegahan_ke_depan: e.target.value })}
+                        className="min-h-[110px] w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
+                <button
+                  onClick={() => {
+                    setModalOpen(false);
+                    setShowDetail(false);
+                    setPhotoMode("camera");
+                  }}
+                  className="rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
-                  <option value="">Pilih Tingkat Resiko</option>
-                  {opsiResiko.map((resiko) => (
-                    <option key={resiko} value={resiko}>
-                      {resiko}
-                    </option>
-                  ))}
-                </select>
-
-
-                <input
-                placeholder="Jenis Cedera"
-                value={form.jenis_cedera}
-                onChange={(e) =>
-                    setForm({ ...form, jenis_cedera: e.target.value })
-                }
-                className="border rounded p-2"
-                />
-
-                <input
-                placeholder="Pertolongan Pertama"
-                value={form.pertolongan_pertama}
-                onChange={(e) =>
-                    setForm({ ...form, pertolongan_pertama: e.target.value })
-                }
-                className="border rounded p-2"
-                />
-
-                <input
-                placeholder="Nama Petugas"
-                value={form.nama_petugas}
-                onChange={(e) =>
-                    setForm({ ...form, nama_petugas: e.target.value })
-                }
-                className="border rounded p-2"
-                />
-
-                <input
-                placeholder="Pencegahan Ke Depan"
-                value={form.pencegahan_ke_depan}
-                onChange={(e) =>
-                    setForm({ ...form, pencegahan_ke_depan: e.target.value })
-                }
-                className="border rounded p-2"
-                />
-            </div>
-            )}
-
-            </div>
-
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="bg-gray-300 px-4 py-2 rounded"
-              >
-                Batal
-              </button>
-              <button
-                onClick={simpanLaporan}
-                className="bg-green-600 text-white px-4 py-2 rounded"
-              >
-                Simpan
-              </button>
+                  Batal
+                </button>
+                <button
+                  onClick={simpanLaporan}
+                  className="rounded-3xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
+                >
+                  Simpan
+                </button>
+              </div>
             </div>
           </div>
         </div>

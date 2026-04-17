@@ -4,6 +4,12 @@ import RuangKerja from "../models/ruangkerja.js";
 import User from "../models/usermodel.js";
 import { uploadFile, deleteFile } from "../services/uploadcareService.js";
 
+const getUploadedFile = (req) => {
+  if (req.file) return req.file;
+  if (!req.files) return null;
+  return req.files.file?.[0] || req.files.foto?.[0] || null;
+};
+
 /**
  * GET /api/laporankecelakaan/list?ruangkerja_id=...
  * Owner + anggota bisa melihat laporan
@@ -35,6 +41,7 @@ export const tambahLaporan = async (req, res) => {
   try {
     const { ruangkerja_id } = req.query;
     const userId = req.user.id;
+    const uploadedFile = getUploadedFile(req);
 
     if (!ruangkerja_id || !mongoose.Types.ObjectId.isValid(ruangkerja_id)) {
       return res.status(400).json({
@@ -43,7 +50,7 @@ export const tambahLaporan = async (req, res) => {
       });
     }
 
-    if (!req.file || !req.body.deskripsi_kejadian) {
+    if (!uploadedFile || !req.body.deskripsi_kejadian) {
       return res.status(400).json({
         success: false,
         message: "Foto dan deskripsi kejadian wajib diisi",
@@ -66,7 +73,7 @@ export const tambahLaporan = async (req, res) => {
       });
     }
 
-    const { fileId, cdnUrl } = await uploadFile(req.file.buffer, req.file.originalname);
+    const { fileId, cdnUrl } = await uploadFile(uploadedFile.buffer, uploadedFile.originalname);
 
     const laporan = await LaporanKecelakaan.create({
       ruangkerja_id,
@@ -103,6 +110,7 @@ export const tambahLaporan = async (req, res) => {
 export const editLaporan = async (req, res) => {
   try {
     const { laporan_id } = req.query;
+    const uploadedFile = getUploadedFile(req);
 
     if (!laporan_id || !mongoose.Types.ObjectId.isValid(laporan_id)) {
       return res.status(400).json({
@@ -119,13 +127,13 @@ export const editLaporan = async (req, res) => {
       });
     }
 
-    if (req.file) {
+    if (uploadedFile) {
       const oldFileId = laporan.fotoFileId;
 
       // ✅ upload dulu
       const { fileId, cdnUrl } = await uploadFile(
-        req.file.buffer,
-        req.file.originalname
+        uploadedFile.buffer,
+        uploadedFile.originalname
       );
 
       laporan.foto = cdnUrl;

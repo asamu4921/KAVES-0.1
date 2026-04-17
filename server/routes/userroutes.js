@@ -11,7 +11,15 @@ userRouter.get('/me', userAuth, async (req, res) => {
     if (!userId) return res.status(401).json({ success: false, message: "User ID missing" });
 
     const user = await userModel.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    if (!user) {
+      // Token can outlive user record (e.g., DB reset). Clear stale auth cookie.
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      });
+      return res.json({ success: false, message: "Not Authorized. Login Again" });
+    }
 
     res.json({
       success: true,

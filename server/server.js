@@ -20,9 +20,24 @@ connectDB();
 // Middleware
 app.use(express.json());
 app.use(cookieParser());
-// server.js (Backend Project)
+const staticAllowedOrigins = ["http://localhost:5173", "http://localhost:4000", "http://localhost:5000"];
+const envAllowedOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const privateLanOriginRegex = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+):\d+$/;
+
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:4000", "http://localhost:5000"],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    const allowList = [...staticAllowedOrigins, ...envAllowedOrigins];
+    if (allowList.includes(origin) || privateLanOriginRegex.test(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true
 }));
 app.use("/api/projects", projectRoutes);

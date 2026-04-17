@@ -30,6 +30,7 @@ Thumbs.db
 *.zip
 *.exe
 *.dmg
+*.pdf
 
 # Logs
 logs/

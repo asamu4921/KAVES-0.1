@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Download, MoreVertical, Edit3, Trash2 } from "lucide-react";
@@ -14,9 +14,15 @@ function RekapitulasiAsesmen({ workspaceId }) {
   const [editAsesmen, setEditAsesmen] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState({ show: false, id: null });
   const [actionMenuId, setActionMenuId] = useState(null);
+  const [workspaceData, setWorkspaceData] = useState(null);
+  const [selectedNomorSuratExport, setSelectedNomorSuratExport] = useState("");
   const backendURL = import.meta.env.VITE_BACKEND_URL;
 
   const [formData, setFormData] = useState({
+    nomor_surat: "",
+    tugas: "",
+    lokasi: "",
+    peralatan: "",
     jenis_pekerjaan: "",
     jenis_bahaya: "",
     cause_effect: "",
@@ -30,6 +36,10 @@ function RekapitulasiAsesmen({ workspaceId }) {
   });
   const resetForm = () => {
     setFormData({
+      nomor_surat: "",
+      tugas: "",
+      lokasi: "",
+      peralatan: "",
       jenis_pekerjaan: "",
       jenis_bahaya: "",
       cause_effect: "",
@@ -41,6 +51,10 @@ function RekapitulasiAsesmen({ workspaceId }) {
       danger: "",
       prevensi: "",
     });
+  };
+  const getDangerFromRisk = (riskValue) => {
+    const risk = Number(riskValue) || 0;
+    return risk >= 17 ? "Catastrophic" : risk >= 10 ? "High" : risk >= 5 ? "Medium" : "Low";
   };
   const handleChange = (field, value) => {
   const newData = { ...formData };
@@ -75,9 +89,7 @@ function RekapitulasiAsesmen({ workspaceId }) {
   const severity = Number(newData.severity) || 0;
 
   newData.risk = likelihood * severity;
-  newData.danger =
-    newData.risk >= 15 ? "High" :
-    newData.risk >= 5 ? "Medium" : "Low";
+  newData.danger = getDangerFromRisk(newData.risk);
 
   setFormData(newData);
 };
@@ -89,6 +101,8 @@ const handleUpdateAsesmen = async (e) => {
   delete payload._id;
   delete payload.tanggal_dibuat;
   delete payload.dibuat_oleh;
+  delete payload.disetujui_oleh;
+  delete payload.tanggal_disetujui;
 
   const res = await fetch(
     `${backendURL}/api/asesmen/edit?asesmen_id=${editAsesmen._id}`,
@@ -142,6 +156,27 @@ const handleDeleteAsesmen = async () => {
       .then(data => {
         if (data.success) setBangunanList(data.data || []);
       });
+  }, [workspaceId]);
+
+  /* ======================
+     FETCH WORKSPACE DETAIL
+  ====================== */
+  useEffect(() => {
+    if (!workspaceId) return;
+
+    fetch(`${backendURL}/api/ruangkerja/list-ruangkerja`, {
+      credentials: "include",
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.data)) {
+          const workspace = data.data.find(ws => ws._id === workspaceId);
+          if (workspace) {
+            setWorkspaceData(workspace);
+          }
+        }
+      })
+      .catch(err => console.error("Gagal fetch workspace detail:", err));
   }, [workspaceId]);
 
   /* ======================
@@ -201,12 +236,62 @@ const handleDeleteAsesmen = async () => {
   if (search) {
     filtered = filtered.filter(a =>
       a.jenis_pekerjaan.toLowerCase().includes(search.toLowerCase()) ||
-      a.jenis_bahaya.toLowerCase().includes(search.toLowerCase())
+      a.jenis_bahaya.toLowerCase().includes(search.toLowerCase()) ||
+      (a.nomor_surat || "").toLowerCase().includes(search.toLowerCase())
     );
   }
 
   setAsesmenList(filtered);
 }, [filterTanggal, filterMode, search, asesmenAll]);
+
+  const groupedAsesmen = useMemo(() => {
+    const groups = {};
+
+    asesmenList.forEach((item) => {
+      const key = (item.nomor_surat || "").trim() || "Tanpa Nomor Surat";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    });
+
+    return Object.entries(groups)
+      .map(([nomorSurat, items]) => ({ nomorSurat, items }))
+      .sort((a, b) => {
+        if (a.nomorSurat === "Tanpa Nomor Surat") return 1;
+        if (b.nomorSurat === "Tanpa Nomor Surat") return -1;
+        return a.nomorSurat.localeCompare(b.nomorSurat);
+      });
+  }, [asesmenList]);
+
+  const exportNomorSuratOptions = useMemo(() => {
+    const mapped = new Map();
+    asesmenList.forEach((item) => {
+      const raw = (item.nomor_surat || "").trim();
+      const key = raw || "__TANPA_SURAT__";
+      if (!mapped.has(key)) {
+        mapped.set(key, raw || "Tanpa Nomor Surat");
+      }
+    });
+
+    return Array.from(mapped.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => {
+        if (a.value === "__TANPA_SURAT__") return 1;
+        if (b.value === "__TANPA_SURAT__") return -1;
+        return a.label.localeCompare(b.label);
+      });
+  }, [asesmenList]);
+
+  useEffect(() => {
+    if (exportNomorSuratOptions.length === 0) {
+      setSelectedNomorSuratExport("");
+      return;
+    }
+
+    const stillExists = exportNomorSuratOptions.some((opt) => opt.value === selectedNomorSuratExport);
+    if (!stillExists) {
+      setSelectedNomorSuratExport("");
+    }
+  }, [exportNomorSuratOptions, selectedNomorSuratExport]);
 
   /* ======================
      EXPORT PDF
@@ -250,121 +335,273 @@ const safeFileText = (text) =>
     .replace(/[^a-zA-Z0-9 ]/g, "")
     .replace(/\s+/g, "_");
 
+const getCellFillByDanger = (danger) => {
+  const value = (danger || "").toLowerCase();
+  if (value === "catastrophic" || value === "katastropik") return [153, 27, 27];
+  if (value === "high") return [194, 65, 12];
+  if (value === "medium") return [202, 138, 4];
+  return [21, 128, 61];
+};
+
+const loadImageAsDataUrl = async (url) => {
+  const proxyUrl = `${backendURL}/api/ruangkerja/logo-proxy?url=${encodeURIComponent(url)}`;
+  const response = await fetch(proxyUrl, { credentials: "include" });
+  if (!response.ok) throw new Error("Gagal mengambil logo");
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas context tidak tersedia"));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0);
+          const dataUrl = canvas.toDataURL("image/png");
+          resolve(dataUrl);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => reject(new Error("Gagal memuat gambar logo"));
+      img.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
 const handleExportPDF = async () => {
   if (!selectedBangunan || !asesmenList.length) return;
 
-  const doc = new jsPDF("p", "pt", "a4");
+  if (exportNomorSuratOptions.length > 1 && !selectedNomorSuratExport) {
+    alert("Pilih nomor surat yang ingin di-print terlebih dahulu.");
+    return;
+  }
+
+  const exportData = asesmenList.filter((item) => {
+    if (!selectedNomorSuratExport) return true;
+    if (selectedNomorSuratExport === "__TANPA_SURAT__") {
+      return !(item.nomor_surat || "").trim();
+    }
+    return (item.nomor_surat || "").trim() === selectedNomorSuratExport;
+  });
+
+  if (!exportData.length) {
+    alert("Tidak ada data untuk nomor surat yang dipilih.");
+    return;
+  }
+
+  const doc = new jsPDF("p", "mm", "a4");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
+  const margin = 12;
+  const contentWidth = pageWidth - margin * 2;
   let y = margin;
 
-  const periode = getPeriodeLaporan(asesmenList);
-  const namaPembuat = asesmenList[0]?.dibuat_oleh?.name || "-";
+  const namaOrganisasi = workspaceData?.nama || "Organisasi";
+  const projectName = `IBPR K3 - ${selectedBangunan.nama}`;
+  const uniqueNomorSurat = [...new Set(exportData.map((a) => (a.nomor_surat || "").trim()).filter(Boolean))];
+  const nomorSuratLabel = uniqueNomorSurat.length === 0
+    ? "Tanpa Nomor Surat"
+    : uniqueNomorSurat.length === 1
+      ? uniqueNomorSurat[0]
+      : `Gabungan (${uniqueNomorSurat.length} dokumen)`;
+  const assessorName = exportData[0]?.dibuat_oleh?.name || "-";
+  const versionLabel = "Rev.01";
+  const tanggalLabel = new Date().toLocaleDateString("id-ID");
 
-  // Nama ruang kerja - gunakan placeholder atau bisa ditambahkan sebagai prop nanti
-  const namaRuangKerja = "Ruang Kerja"; // TODO: Pass sebagai prop atau fetch jika diperlukan
+  const tugasLabel = [...new Set(exportData.map((a) => (a.tugas || "").trim()).filter(Boolean))].join("; ") || "-";
+  const lokasiLabel = [...new Set(exportData.map((a) => (a.lokasi || "").trim()).filter(Boolean))].join("; ") || "-";
+  const peralatanLabel = [...new Set(exportData.map((a) => (a.peralatan || "").trim()).filter(Boolean))].join("; ") || "-";
+  const tugasLokasiPeralatan = `Tugas: ${tugasLabel} | Lokasi: ${lokasiLabel} | Peralatan: ${peralatanLabel}`;
 
-  // ===== HEADER/KOP =====
+  const logoUrl = workspaceData?.logo_url || workspaceData?.logo;
+  const logoBoxW = 24;
+  const logoBoxH = 24;
+  const headerTop = y;
+  const headerHeight = 30;
+
+  if (logoUrl) {
+    try {
+      const logoDataUrl = await loadImageAsDataUrl(logoUrl);
+      const imgProps = doc.getImageProperties(logoDataUrl);
+      const ratio = imgProps.width / imgProps.height;
+
+      let drawW = logoBoxW;
+      let drawH = drawW / ratio;
+      if (drawH > logoBoxH) {
+        drawH = logoBoxH;
+        drawW = drawH * ratio;
+      }
+
+      const imgX = margin + 3 + (logoBoxW - drawW) / 2;
+      const imgY = headerTop + 3 + (logoBoxH - drawH) / 2;
+      doc.addImage(logoDataUrl, "PNG", imgX, imgY, drawW, drawH);
+    } catch (error) {
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text("LOGO", margin + 15, headerTop + 16, { align: "center" });
+    }
+  } else {
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text("LOGO", margin + 15, headerTop + 16, { align: "center" });
+  }
+
+  doc.setTextColor(15, 23, 42);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("LAPORAN ASESMEN KESELAMATAN DAN KESEHATAN KERJA (K3L)", pageWidth / 2, y, { align: "center" });
-
-  y += 20;
-  doc.setFontSize(14);
-  doc.text(`GEDUNG ${selectedBangunan.nama.toUpperCase()}`, pageWidth / 2, y, { align: "center" });
-
-  y += 20;
   doc.setFontSize(12);
-  doc.text(periode, pageWidth / 2, y, { align: "center" });
-
-  y += 15;
-  doc.setFontSize(10);
-  doc.text(`Nama Ruang Kerja: ${namaRuangKerja}`, margin, y);
-  y += 12;
-  doc.text(`Nama Gedung: ${selectedBangunan.nama}`, margin, y);
-  y += 12;
-  doc.text(`Nama Pembuat: ${namaPembuat}`, margin, y);
-
-  // Garis tebal di bawah header
-  y += 10;
-  doc.setLineWidth(2);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 20;
-
-  // ===== RINGKASAN EKSEKUTIF =====
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("RINGKASAN EKSEKUTIF", margin, y);
-  y += 15;
-
+  doc.text("IDENTIFIKASI BAHAYA & PENILAIAN RISIKO (IBPR)", margin + 32, headerTop + 10);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  const totalTemuan = asesmenList.length;
-  const tingkatRisikoTertinggi = asesmenList.reduce((max, a) => 
-    (a.danger === "High" && max !== "High") || (a.danger === "Medium" && max === "Low") ? a.danger : max, "Low"
-  );
+  doc.setFontSize(9);
+  doc.text(`Gedung: ${selectedBangunan.nama}`, margin + 32, headerTop + 16);
+  doc.text(`Periode: ${getPeriodeLaporan(exportData)}`, margin + 32, headerTop + 21);
+  doc.text(`Tanggal Cetak: ${tanggalLabel}`, margin + 32, headerTop + 26);
 
-  doc.text(`Total Temuan Asesmen: ${totalTemuan}`, margin + 10, y);
-  y += 12;
-  doc.text(`Tingkat Risiko Tertinggi: ${tingkatRisikoTertinggi}`, margin + 10, y);
-  y += 20;
+  doc.setDrawColor(51, 65, 85);
+  doc.setLineWidth(1.2);
+  doc.line(margin, headerTop + headerHeight + 2, margin + contentWidth, headerTop + headerHeight + 2);
+  doc.setLineWidth(0.2);
 
-  // Garis pemisah
-  doc.setLineWidth(0.5);
-  doc.line(margin, y, pageWidth - margin, y);
-  y += 20;
+  y = headerTop + 34;
 
-  // ===== DETAIL TABEL =====
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("DETAIL ASESMEN", margin, y);
-  y += 15;
-
-  // Tabel utama dengan kolom lengkap
   autoTable(doc, {
     startY: y,
-    head: [["No", "Jenis Pekerjaan", "Jenis Bahaya", "Cause & Effect", "Level", "Impact", "Risk", "Danger", "Prevensi", "Tanggal"]],
-    body: asesmenList.map((a, i) => [
-      i + 1,
-      a.jenis_pekerjaan,
-      a.jenis_bahaya,
-      a.cause_effect,
-      a.level || "-",
-      a.impact || "-",
-      a.risk || "-",
-      a.danger,
-      a.prevensi,
-      new Date(a.tanggal_dibuat).toLocaleDateString("id-ID")
-    ]),
-    styles: { 
-      fontSize: 8,
-      cellPadding: 4,
-      halign: 'left'
-    },
-    headStyles: { 
-      fillColor: [0, 47, 167], // Navy blue
-      textColor: 255,
-      fontStyle: 'bold'
-    },
-    alternateRowStyles: { fillColor: [240, 248, 255] }, // Light blue zebra
     margin: { left: margin, right: margin },
-    didDrawPage: (data) => {
-      // Footer dengan nomor halaman
-      const pageCount = doc.internal.getNumberOfPages();
-      const currentPage = data.pageNumber;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.text(`Halaman ${currentPage} dari ${pageCount}`, pageWidth / 2, pageHeight - 20, { align: "center" });
+    theme: "grid",
+    head: [[
+      "Nama Proyek/Dokumen",
+      "Nomor Surat",
+      "Nama Organisasi",
+      "Penanggung Jawab",
+      "Versi"
+    ]],
+    body: [[
+      projectName,
+      nomorSuratLabel,
+      namaOrganisasi,
+      assessorName,
+      versionLabel
+    ]],
+    styles: {
+      fontSize: 8,
+      textColor: [15, 23, 42],
+      cellPadding: 2,
+      overflow: "linebreak",
+      valign: "middle"
+    },
+    headStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontStyle: "bold",
+      halign: "center"
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255]
     }
   });
 
-  const filePeriode = safeFileText(periode);
+  y = doc.lastAutoTable.finalY + 4;
 
-  doc.save(
-    `Laporan_Asesmen_K3L_${selectedBangunan.nama}_${filePeriode}.pdf`
-  );
+  autoTable(doc, {
+    startY: y,
+    margin: { left: margin, right: margin },
+    theme: "grid",
+    body: [
+      ["TUGAS/LOKASI/PERALATAN", tugasLokasiPeralatan],
+      ["Diases Oleh", assessorName],
+      ["Tanggal", tanggalLabel]
+    ],
+    styles: {
+      fontSize: 8,
+      textColor: [15, 23, 42],
+      cellPadding: 2,
+      overflow: "linebreak"
+    },
+    columnStyles: {
+      0: { cellWidth: 45, fontStyle: "bold" },
+      1: { cellWidth: contentWidth - 45 }
+    }
+  });
 
+  y = doc.lastAutoTable.finalY + 5;
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: margin, right: margin, bottom: 14 },
+    theme: "grid",
+    head: [["No", "Jenis Pekerjaan", "Jenis Bahaya", "Cause/Effect", "L", "S", "Risk", "Prevensi"]],
+    body: exportData.map((a, i) => {
+      const likelihood = Number(a.likelihood) || 0;
+      const severity = Number(a.severity) || 0;
+      const risk = Number(a.risk) || likelihood * severity;
+      const danger = a.danger || getDangerFromRisk(risk);
+      return [
+        i + 1,
+        a.jenis_pekerjaan || "-",
+        a.jenis_bahaya || "-",
+        a.cause_effect || "-",
+        likelihood || "-",
+        severity || "-",
+        `${risk || "-"} (${danger})`,
+        a.prevensi || "-"
+      ];
+    }),
+    styles: {
+      fontSize: 7.5,
+      textColor: [15, 23, 42],
+      cellPadding: 2,
+      overflow: "linebreak",
+      valign: "middle"
+    },
+    headStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontStyle: "bold",
+      halign: "center"
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: "center" },
+      1: { cellWidth: 34 },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 44 },
+      4: { cellWidth: 8, halign: "center" },
+      5: { cellWidth: 8, halign: "center" },
+      6: { cellWidth: 26, halign: "center", fontStyle: "bold" },
+      7: { cellWidth: 30 }
+    },
+    didParseCell: (hookData) => {
+      if (hookData.section !== "body" || hookData.column.index !== 6) return;
+      const row = exportData[hookData.row.index];
+      const danger = row?.danger || "Low";
+      hookData.cell.styles.fillColor = getCellFillByDanger(danger);
+      hookData.cell.styles.textColor = [255, 255, 255];
+    },
+    didDrawPage: (hookData) => {
+      const pageCount = doc.internal.getNumberOfPages();
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Dokumen: ${projectName}`, margin, pageHeight - 7);
+      doc.text(`Halaman ${hookData.pageNumber} / ${pageCount}`, pageWidth - margin, pageHeight - 7, { align: "right" });
+    }
+  });
+
+  const filePeriode = safeFileText(getPeriodeLaporan(exportData));
+  const fileNomorSurat = safeFileText(nomorSuratLabel);
+  const fileName = `IBPR_${selectedBangunan.nama}_${fileNomorSurat}_${filePeriode}.pdf`;
+  doc.save(fileName);
 };
 
 
@@ -415,15 +652,31 @@ const handleExportPDF = async () => {
               <p className="text-sm text-slate-600">
                 {selectedBangunan ? `Laporan untuk ${selectedBangunan.nama}` : "Belum ada bangunan yang dipilih."}
               </p>
-              <button
-                type="button"
-                onClick={handleExportPDF}
-                disabled={!selectedBangunan || asesmenList.length === 0}
-                className="inline-flex items-center justify-center gap-2 rounded-3xl bg-green-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/10 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
-              >
-                <Download className="h-4 w-4" />
-                Ekspor PDF
-              </button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <select
+                  value={selectedNomorSuratExport}
+                  onChange={(e) => setSelectedNomorSuratExport(e.target.value)}
+                  className="rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+                  disabled={!selectedBangunan || exportNomorSuratOptions.length === 0}
+                >
+                  <option value="">
+                    {exportNomorSuratOptions.length > 1 ? "Pilih Nomor Surat untuk Print" : "Semua data aktif"}
+                  </option>
+                  {exportNomorSuratOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={handleExportPDF}
+                  disabled={!selectedBangunan || asesmenList.length === 0 || (exportNomorSuratOptions.length > 1 && !selectedNomorSuratExport)}
+                  className="inline-flex items-center justify-center gap-2 rounded-3xl bg-green-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/10 transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                >
+                  <Download className="h-4 w-4" />
+                  Ekspor PDF
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -484,7 +737,7 @@ const handleExportPDF = async () => {
               <input
                 type="text"
                 className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
-                placeholder="Cari pekerjaan / bahaya..."
+                placeholder="Cari nomor surat / pekerjaan / bahaya..."
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
@@ -508,123 +761,153 @@ const handleExportPDF = async () => {
               </div>
             ) : (
               <>
-                <div className="mt-6 space-y-4 lg:hidden">
-                  {asesmenList.map((a, i) => (
-                    <div key={a._id} className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 p-5">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{i + 1}</p>
-                          <h3 className="mt-2 text-lg font-semibold text-slate-900">{a.jenis_pekerjaan}</h3>
-                          <p className="mt-2 text-sm text-slate-600">{a.jenis_bahaya}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setActionMenuId(actionMenuId === a._id ? null : a._id)}
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-sm"
-                        >
-                          <MoreVertical className="h-5 w-5" />
-                        </button>
+                <div className="mt-6 space-y-6 lg:hidden">
+                  {groupedAsesmen.map((group) => (
+                    <div key={group.nomorSurat} className="space-y-4">
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-700">Nomor Surat</p>
+                        <p className="mt-1 text-sm font-semibold text-emerald-900">{group.nomorSurat}</p>
                       </div>
 
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div className="rounded-3xl bg-white p-4 text-sm text-slate-700 shadow-sm">
-                          <p className="text-slate-500">Risk</p>
-                          <p className="mt-2 font-semibold">{a.risk}</p>
-                        </div>
-                        <div className="rounded-3xl bg-white p-4 text-sm text-slate-700 shadow-sm">
-                          <p className="text-slate-500">Danger</p>
-                          <p className="mt-2 font-semibold">{a.danger}</p>
-                        </div>
-                      </div>
+                      {group.items.map((a, i) => (
+                        <div key={a._id} className="relative overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 p-5">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{i + 1}</p>
+                              <h3 className="mt-2 text-lg font-semibold text-slate-900">{a.jenis_pekerjaan}</h3>
+                              <p className="mt-2 text-sm text-slate-600">{a.jenis_bahaya}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setActionMenuId(actionMenuId === a._id ? null : a._id)}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-sm"
+                            >
+                              <MoreVertical className="h-5 w-5" />
+                            </button>
+                          </div>
 
-                      {actionMenuId === a._id && (
-                        <div className="absolute right-4 top-16 z-20 w-40 rounded-3xl border border-slate-200 bg-white shadow-lg">
-                          <button
-                            onClick={() => {
-                              const { _id, tanggal_dibuat, dibuat_oleh, ...editable } = a;
-                              setFormData(editable);
-                              setEditAsesmen(a);
-                              setShowForm(true);
-                              setActionMenuId(null);
-                            }}
-                            className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2"
-                          >
-                            <Edit3 className="h-4 w-4" /> Edit
-                          </button>
-                          <button
-                            onClick={() => { setConfirmDelete({ show: true, id: a._id }); setActionMenuId(null); }}
-                            className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2"
-                          >
-                            <Trash2 className="h-4 w-4" /> Hapus
-                          </button>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-3xl bg-white p-4 text-sm text-slate-700 shadow-sm">
+                              <p className="text-slate-500">Risk</p>
+                              <p className="mt-2 font-semibold">{a.risk}</p>
+                            </div>
+                            <div className="rounded-3xl bg-white p-4 text-sm text-slate-700 shadow-sm">
+                              <p className="text-slate-500">Danger</p>
+                              <p className="mt-2 font-semibold">{a.danger}</p>
+                            </div>
+                          </div>
+
+                          {actionMenuId === a._id && (
+                            <div className="absolute right-4 top-16 z-20 w-40 rounded-3xl border border-slate-200 bg-white shadow-lg">
+                              <button
+                                onClick={() => {
+                                  const { _id, tanggal_dibuat, dibuat_oleh, ...editable } = a;
+                                    setFormData({
+                                      ...editable,
+                                      risk: Number(editable.likelihood || 0) * Number(editable.severity || 0),
+                                      danger: getDangerFromRisk(Number(editable.likelihood || 0) * Number(editable.severity || 0)),
+                                    });
+                                  setEditAsesmen(a);
+                                  setShowForm(true);
+                                  setActionMenuId(null);
+                                }}
+                                className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2"
+                              >
+                                <Edit3 className="h-4 w-4" /> Edit
+                              </button>
+                              <button
+                                onClick={() => { setConfirmDelete({ show: true, id: a._id }); setActionMenuId(null); }}
+                                className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-100 flex items-center gap-2"
+                              >
+                                <Trash2 className="h-4 w-4" /> Hapus
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
                   ))}
                 </div>
 
-                <div className="hidden overflow-x-auto lg:block">
-                  <table className="min-w-full text-left text-sm leading-6">
-                    <thead className="bg-slate-100 text-slate-600 uppercase tracking-[0.15em] text-[12px]">
-                      <tr>
-                        <th className="px-4 py-3">No</th>
-                        <th className="px-4 py-3">Pekerjaan</th>
-                        <th className="px-4 py-3">Bahaya</th>
-                        <th className="px-4 py-3">Likelihood</th>
-                        <th className="px-4 py-3">Severity</th>
-                        <th className="px-4 py-3">Risk</th>
-                        <th className="px-4 py-3">Danger</th>
-                        <th className="px-4 py-3">Tanggal</th>
-                        <th className="px-4 py-3 text-center">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
-                      {asesmenList.map((a, i) => (
-                        <tr key={a._id} className="hover:bg-slate-50">
-                          <td className="px-4 py-4 align-top text-slate-700">{i + 1}</td>
-                          <td className="px-4 py-4 align-top text-slate-800">{a.jenis_pekerjaan}</td>
-                          <td className="px-4 py-4 align-top text-slate-700">{a.jenis_bahaya}</td>
-                          <td className="px-4 py-4 align-top text-slate-700">{a.likelihood}</td>
-                          <td className="px-4 py-4 align-top text-slate-700">{a.severity}</td>
-                          <td className="px-4 py-4 align-top text-slate-700">{a.risk}</td>
-                          <td className="px-4 py-4 align-top text-slate-700">{a.danger}</td>
-                          <td className="px-4 py-4 align-top text-slate-700">{new Date(a.tanggal_dibuat).toLocaleDateString()}</td>
-                          <td className="relative px-4 py-4 align-top text-center">
-                            <button
-                              type="button"
-                              onClick={() => setActionMenuId(actionMenuId === a._id ? null : a._id)}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"
-                            >
-                              <MoreVertical className="h-5 w-5" />
-                            </button>
+                <div className="hidden space-y-6 lg:block">
+                  {groupedAsesmen.map((group) => (
+                    <div key={group.nomorSurat} className="overflow-hidden rounded-2xl border border-slate-200">
+                      <div className="border-b border-slate-200 bg-emerald-50 px-4 py-3">
+                        <p className="text-xs uppercase tracking-[0.2em] text-emerald-700">Nomor Surat</p>
+                        <p className="mt-1 text-sm font-semibold text-emerald-900">{group.nomorSurat}</p>
+                      </div>
 
-                            {actionMenuId === a._id && (
-                              <div className="absolute right-2 top-12 z-20 w-40 rounded-3xl border border-slate-200 bg-white shadow-lg">
-                                <button
-                                  onClick={() => {
-                                    const { _id, tanggal_dibuat, dibuat_oleh, ...editable } = a;
-                                    setFormData(editable);
-                                    setEditAsesmen(a);
-                                    setShowForm(true);
-                                    setActionMenuId(null);
-                                  }}
-                                  className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Edit3 className="h-4 w-4" /> Edit
-                                </button>
-                                <button
-                                  onClick={() => { setConfirmDelete({ show: true, id: a._id }); setActionMenuId(null); }}
-                                  className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Trash2 className="h-4 w-4" /> Hapus
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-left text-sm leading-6">
+                          <thead className="bg-slate-100 text-slate-600 uppercase tracking-[0.15em] text-[12px]">
+                            <tr>
+                              <th className="px-4 py-3">No</th>
+                              <th className="px-4 py-3">Nomor Surat</th>
+                              <th className="px-4 py-3">Pekerjaan</th>
+                              <th className="px-4 py-3">Bahaya</th>
+                              <th className="px-4 py-3">Likelihood</th>
+                              <th className="px-4 py-3">Severity</th>
+                              <th className="px-4 py-3">Risk</th>
+                              <th className="px-4 py-3">Danger</th>
+                              <th className="px-4 py-3">Tanggal</th>
+                              <th className="px-4 py-3 text-center">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {group.items.map((a, i) => (
+                              <tr key={a._id} className="hover:bg-slate-50">
+                                <td className="px-4 py-4 align-top text-slate-700">{i + 1}</td>
+                                <td className="px-4 py-4 align-top font-medium text-slate-700">{a.nomor_surat || "-"}</td>
+                                <td className="px-4 py-4 align-top text-slate-800">{a.jenis_pekerjaan}</td>
+                                <td className="px-4 py-4 align-top text-slate-700">{a.jenis_bahaya}</td>
+                                <td className="px-4 py-4 align-top text-slate-700">{a.likelihood}</td>
+                                <td className="px-4 py-4 align-top text-slate-700">{a.severity}</td>
+                                <td className="px-4 py-4 align-top text-slate-700">{a.risk}</td>
+                                <td className="px-4 py-4 align-top text-slate-700">{a.danger}</td>
+                                <td className="px-4 py-4 align-top text-slate-700">{new Date(a.tanggal_dibuat).toLocaleDateString()}</td>
+                                <td className="relative px-4 py-4 align-top text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => setActionMenuId(actionMenuId === a._id ? null : a._id)}
+                                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                  >
+                                    <MoreVertical className="h-5 w-5" />
+                                  </button>
+
+                                  {actionMenuId === a._id && (
+                                    <div className="absolute right-2 top-12 z-20 w-40 rounded-3xl border border-slate-200 bg-white shadow-lg">
+                                      <button
+                                        onClick={() => {
+                                          const { _id, tanggal_dibuat, dibuat_oleh, ...editable } = a;
+                                            setFormData({
+                                              ...editable,
+                                              risk: Number(editable.likelihood || 0) * Number(editable.severity || 0),
+                                              danger: getDangerFromRisk(Number(editable.likelihood || 0) * Number(editable.severity || 0)),
+                                            });
+                                          setEditAsesmen(a);
+                                          setShowForm(true);
+                                          setActionMenuId(null);
+                                        }}
+                                        className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                      >
+                                        <Edit3 className="h-4 w-4" /> Edit
+                                      </button>
+                                      <button
+                                        onClick={() => { setConfirmDelete({ show: true, id: a._id }); setActionMenuId(null); }}
+                                        className="w-full px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                      >
+                                        <Trash2 className="h-4 w-4" /> Hapus
+                                      </button>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </>
             )
@@ -642,6 +925,46 @@ const handleExportPDF = async () => {
             <h2 className="text-xl font-semibold mb-4">Edit Asesmen</h2>
 
             <form onSubmit={handleUpdateAsesmen} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Nomor Surat</span>
+                <input
+                  className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                  value={formData.nomor_surat || ""}
+                  onChange={(e) => handleChange("nomor_surat", e.target.value)}
+                  placeholder="Nomor Surat"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Tugas</span>
+                <input
+                  className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                  value={formData.tugas || ""}
+                  onChange={(e) => handleChange("tugas", e.target.value)}
+                  placeholder="Tugas"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Lokasi</span>
+                <input
+                  className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                  value={formData.lokasi || ""}
+                  onChange={(e) => handleChange("lokasi", e.target.value)}
+                  placeholder="Lokasi"
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-700">Peralatan</span>
+                <input
+                  className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 focus:border-emerald-500 focus:outline-none"
+                  value={formData.peralatan || ""}
+                  onChange={(e) => handleChange("peralatan", e.target.value)}
+                  placeholder="Peralatan"
+                />
+              </label>
+
               <label className="space-y-2">
                 <span className="text-sm font-medium text-slate-700">Jenis Pekerjaan</span>
                 <input

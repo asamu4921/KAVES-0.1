@@ -8,6 +8,25 @@ import Gedung from "./gedung";
 import Map from "./map";
 import LaporanKecelakaan from "./laporankecelakaan";
 
+const JAKARTA_TIME_ZONE = "Asia/Jakarta";
+
+const getJakartaDateParts = (date) => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: JAKARTA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const getPart = (type) => Number(parts.find((item) => item.type === type)?.value || 0);
+
+  return {
+    year: getPart("year"),
+    month: getPart("month"),
+    day: getPart("day"),
+  };
+};
+
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -53,10 +72,21 @@ export default function Home() {
     fetchUser();
   }, []);
   const [openProfile, setOpenProfile] = useState(false);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editName, setEditName] = useState("");
   const [editPhoto, setEditPhoto] = useState(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const editPhotoPreview = useMemo(
+    () => (editPhoto ? URL.createObjectURL(editPhoto) : null),
+    [editPhoto]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (editPhotoPreview) URL.revokeObjectURL(editPhotoPreview);
+    };
+  }, [editPhotoPreview]);
 
   // Isi editName saat modal dibuka
   useEffect(() => {
@@ -306,14 +336,13 @@ export default function Home() {
       alert("Terjadi kesalahan saat keluar dari workspace");
     }
   };
-
-
+  const nowJakarta = getJakartaDateParts(new Date());
 
   const [bobotRisiko, setBobotRisiko] = useState(70);
   const bobotFrekuensi = 100 - bobotRisiko;
   const [filterType, setFilterType] = useState("all");
-  const [filterMonth, setFilterMonth] = useState(new Date().getMonth() + 1);
-  const [filterYear, setFilterYear] = useState(new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState(nowJakarta.month);
+  const [filterYear, setFilterYear] = useState(nowJakarta.year);
 
   const skalaResiko = {
   Insignificant: 1,
@@ -329,7 +358,13 @@ const [loadingSAW, setLoadingSAW] = useState(false);
 const maxNilaiSAW = hasilSAW.length > 0 ? Math.max(...hasilSAW.map((item) => item.nilaiSAW)) : 0;
 
 const parseLaporanDate = (lap) => {
-  const rawDate = lap.tanggal ?? lap.createdAt ?? lap.date ?? lap.tanggal_laporan ?? lap.created_at;
+  const rawDate =
+    lap.waktu_tanggal ??
+    lap.tanggal ??
+    lap.createdAt ??
+    lap.date ??
+    lap.tanggal_laporan ??
+    lap.created_at;
   if (!rawDate) return null;
   const date = new Date(rawDate);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -349,8 +384,7 @@ const filteredLaporan = useMemo(() => {
     if (filterType === "all") return true;
     if (!lap._parsedDate) return false;
 
-    const year = lap._parsedDate.getFullYear();
-    const month = lap._parsedDate.getMonth() + 1;
+    const { year, month } = getJakartaDateParts(lap._parsedDate);
 
     if (filterType === "month") {
       return month === filterMonth && year === filterYear;
@@ -367,7 +401,7 @@ const availableYears = useMemo(() => {
     laporanWithDate
       .map((lap) => lap._parsedDate)
       .filter(Boolean)
-      .map((date) => date.getFullYear())
+      .map((date) => getJakartaDateParts(date).year)
   );
   return Array.from(years).sort((a, b) => b - a);
 }, [laporanWithDate]);
@@ -390,6 +424,7 @@ const formatDate = (date) =>
         day: "numeric",
         month: "long",
         year: "numeric",
+        timeZone: JAKARTA_TIME_ZONE,
       })
     : "";
 
@@ -408,7 +443,7 @@ const monthNames = [
   "Desember",
 ];
 
-const yearOptions = availableYears.length > 0 ? availableYears : [new Date().getFullYear()];
+const yearOptions = availableYears.length > 0 ? availableYears : [nowJakarta.year];
 
 const activeFilterLabel = filterType === "all"
   ? dateRange
@@ -608,6 +643,23 @@ useEffect(() => {
               {/* EDIT PROFILE */}
               <button
                 onClick={() => {
+                  if (!user?.photo) return;
+                  setShowPhotoModal(true);
+                  setOpenProfile(false);
+                }}
+                disabled={!user?.photo}
+                className={`w-full text-left px-4 py-2 text-sm ${
+                  user?.photo
+                    ? "hover:bg-gray-100"
+                    : "cursor-not-allowed text-gray-400"
+                }`}
+              >
+                Lihat Foto Profil
+              </button>
+
+              {/* EDIT PROFILE */}
+              <button
+                onClick={() => {
                   setShowEditModal(true);
                   setOpenProfile(false);
                 }}
@@ -644,6 +696,11 @@ useEffect(() => {
           <p className="text-sm text-gray-600 mt-2">
             Atur bobot risiko untuk melihat perubahan prioritas lokasi secara realtime.
           </p>
+          {filterType === "all" && (
+            <p className="mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+              Data mode All: {dateRange ? `${formatDate(dateRange.start)} - ${formatDate(dateRange.end)}` : "rentang tanggal belum tersedia"}
+            </p>
+          )}
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 w-full lg:w-[420px]">
@@ -730,7 +787,7 @@ useEffect(() => {
           </div>
 
           <div className="mt-4 flex items-center justify-between text-sm text-slate-600 mb-3">
-            <span>Risiko</span>
+            <span>Geser untuk menyesuaikan bobot !</span>
             <span>{bobotRisiko}%</span>
           </div>
           <input
@@ -743,7 +800,7 @@ useEffect(() => {
           />
 
           <div className="mt-4 flex items-center justify-between text-sm text-slate-600">
-            <span>Sesuaikan Botot Mandiri !</span>
+            <span>Risiko</span>
             <span>{bobotRisiko}%</span>
           </div>
           <div className="h-2 rounded-full bg-slate-200 overflow-hidden mt-2">
@@ -994,11 +1051,43 @@ useEffect(() => {
         </section>
       </main>
 
+      {/* VIEW PROFILE PHOTO MODAL */}
+      {showPhotoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100/75 px-4 py-8 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-[28px] bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900">Foto Profil</h3>
+              <button
+                type="button"
+                onClick={() => setShowPhotoModal(false)}
+                className="rounded-xl px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+              >
+                Tutup
+              </button>
+            </div>
+
+            {user?.photo ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                <img
+                  src={user.photo}
+                  alt="Foto profil"
+                  className="max-h-[70vh] w-full object-contain"
+                />
+              </div>
+            ) : (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+                Foto profil belum tersedia.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* EDIT PROFILE MODAL */}
       {showEditModal && (
-        <div className="edit-modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="edit-modal-content bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold mb-4">Edit Profile</h3>
+        <div className="edit-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-100/75 px-4 py-8 backdrop-blur-sm">
+          <div className="edit-modal-content w-full max-w-md rounded-[24px] bg-white p-6 shadow-2xl">
+            <h3 className="mb-4 text-lg font-semibold">Edit Profile</h3>
             <form onSubmit={handleEditProfile}>
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">Nama</label>
@@ -1013,11 +1102,37 @@ useEffect(() => {
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2">Foto Profil</label>
                 <input
+                  id="edit-photo-input"
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setEditPhoto(e.target.files[0])}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(e) => setEditPhoto(e.target.files?.[0] || null)}
+                  className="hidden"
                 />
+
+                <label
+                  htmlFor="edit-photo-input"
+                  className="group flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 transition hover:border-emerald-300 hover:bg-emerald-50"
+                >
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-xl font-bold text-white shadow-sm transition group-hover:bg-emerald-700">
+                    +
+                  </span>
+                  <span className="text-sm text-slate-700">
+                    {editPhoto ? editPhoto.name : "Pilih foto baru"}
+                  </span>
+                </label>
+
+                {(editPhoto || user?.photo) && (
+                  <div className="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <img
+                      src={editPhotoPreview || user.photo}
+                      alt="Preview foto profil"
+                      className="h-12 w-12 rounded-full object-cover"
+                    />
+                    <p className="text-xs text-slate-600">
+                      {editPhoto ? "Preview foto baru" : "Foto profil saat ini"}
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end gap-2">
                 <button

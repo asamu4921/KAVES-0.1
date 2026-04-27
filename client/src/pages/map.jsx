@@ -30,9 +30,11 @@ const Map = ({ workspaceId }) => {
     }
   };
 
-  // URL target Svelte: gunakan query parameter ruangkerja_id agar sinkron dengan backend / Svelte
-  const floorplanHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
-  const svelteUrl = `http://${floorplanHost}:5000/?ruangkerja_id=${workspaceId}`;
+  // URL floorplan bisa diatur lewat env agar fleksibel di local/VPS
+  const floorplanBaseUrl = import.meta.env.VITE_FLOORPLAN_URL || "http://localhost:5000";
+  const floorplanUrl = new URL(floorplanBaseUrl);
+  floorplanUrl.searchParams.set("ruangkerja_id", workspaceId || "");
+  const svelteUrl = floorplanUrl.toString();
 
   return (
     <div className="flex flex-col h-full w-full">

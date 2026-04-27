@@ -1,0 +1,35 @@
+services:
+  server:
+    build: ./server
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    expose:
+      - "5454"
+    depends_on:
+      - mongo
+
+  floorplan:
+    build: ./open3dFloorplan-main
+    restart: unless-stopped
+    env_file:
+      - ./open3dFloorplan-main/.env
+    expose:
+      - "5000"
+
+  client:
+    build: ./client
+    restart: unless-stopped
+    env_file:
+      - ./client/.env
+    ports:
+      - "4000:4000"
+
+  mongo:
+    image: mongo:latest
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
